@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Diogenes</title>
+
+    <link rel="stylesheet" href="style.css">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400&display=swap" rel="stylesheet">
+
+    <link rel="icon" href="images/diogenes.ico">
+
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/3.3.1/jquery.min.js"></script>
+    <script>
+        if ('scrollRestoration' in history) {
+            history.scrollRestoration = 'manual';
+        }
+        window.scrollTo(0, 0);
+    </script>
+</head>
+
+<body>
+    <nav class="topnav">
+        <!-- <a href="https://joshnegreanu.com" class="top_nav nav-home">
+            <b>Josh Negreanu &nbsp</b><div class="nav-sub">Portland, OR</div>
+        </a> -->
+        <a class="top_nav_logo" style="text-decoration: none; color: black;" href="https://diogenes.joshnegreanu.com">d\</a>
+        <!-- <div class="nav-links"> -->
+            <!-- <a href="https://joshnegreanu.com" class="top_nav">joshnegreanu.com</a> -->
+            <!-- <a href="https://joshnegreanu.com/files/resume.pdf" target="_blank" class="top_nav">RESUME</a>
+            <a href="https://linkedin.com/in/joshnegreanu/" target="_blank" class="top_nav">LINKEDIN</a>
+            <a href="https://github.com/JoshNegreanu" target="_blank" class="top_nav">GITHUB</a>
+            <a href="https://linktr.ee/joshnegreanu" target="_blank" class="top_nav">SOCIALS</a> -->
+        <!-- </div> -->
+    </nav>
+
+    <!-- Top gradient fade -->
+    <div class="fade-top"></div>
+
+    <!-- Chat Interface -->
+    <div class="chat-page">
+        <div class="chat-messages" id="chatMessages">
+
+            <!-- Greeting Card -->
+            <div class="greeting-card" id="greetingCard">
+                <div class="greeting-title">Hello, there.</div>
+                <!-- <br> -->
+                <div class="greeting-sub" style="color: rgb(100, 100, 100)">Diogenes is an experimental project; it makes frequent errors and should not be used for professional purposes. You can view the open-source project on <a class="normal_link" style="font-family: 'Inter', sans-serif;" href="https://github.com/joshnegreanu/diogenes" target="_blank"><u>Github</u></a>.</div>
+                <br>
+                <!-- <div class="greeting-desc">
+                    Currently in development — the model and server are not yet live.<br>
+                    Feel free to explore the interface or view the
+                    <a class="normal_link" href="https://github.com/joshnegreanu/diogenes" target="_blank"><u>GitHub repository</u></a>.
+                </div> -->
+                <!-- <div class="greeting-chips">
+                    <button class="chip" onclick="handleChip(this)">What is Diogenes?</button>
+                    <button class="chip" onclick="handleChip(this)">How does a diffusion LM work?</button>
+                    <button class="chip" onclick="handleChip(this)">What can you do?</button>
+                </div> -->
+            </div>
+        </div>
+
+        <!-- Chat Input Bar -->
+        <div class="chat-input-bar">
+            <div class="fade-bottom"></div>
+            <div class="chat-input-inner">
+                <textarea
+                    class="chat-input"
+                    id="chatInput"
+                    placeholder="Ask away..."
+                    rows="1"
+                    aria-label="Message input"
+                ></textarea>
+                <button class="chat-send-btn" id="sendBtn" onclick="sendMessage()" aria-label="Send message">
+                    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M7 12V2M7 2L2.5 6.5M7 2L11.5 6.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="input-disclaimer">Diogenes is an experimental project and should not be used for production purposes.</div>
+        </div>
+    </div>
+
+    <!-- <footer class="botnav" style="background-color: white;">
+        <div class="footer_text" style="color: black">WEBSITE CODE IS ON GITHUB. LINK IS ABOVE. © 2026</div>
+        <a class="footer_link" style="color: black" href="mailto:joshua.negreanu@gmail.com">joshua.negreanu@gmail.com</a>
+    </footer> -->
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        const SESSION_ID = crypto.randomUUID();
+        let hasStarted = false;
+        let isGenerating = false;
+
+        // Kill the server-side session when the tab is closed
+        window.addEventListener('beforeunload', () => {
+            fetch(`${API_BASE}/session/${SESSION_ID}`, { method: 'DELETE', keepalive: true });
+        });
+
+        async function sendMessage() {
+            if (isGenerating) return;
+
+            const input = document.getElementById('chatInput');
+            const text = input.value.trim();
+            if (!text) return;
+
+            if (!hasStarted) {
+                const greetingCard = document.getElementById('greetingCard');
+                greetingCard.classList.add('greeting-card--hidden');
+                setTimeout(() => greetingCard.remove(), 350);
+                document.body.classList.add('chat-started');
+                hasStarted = true;
+            }
+
+            appendMessage(text, 'user');
+            input.value = '';
+            input.style.height = 'auto';
+
+            const btn = document.getElementById('sendBtn');
+            btn.disabled = true;
+            isGenerating = true;
+
+            const typingId = showTyping();
+
+            try {
+                const response = await fetch(`${API_BASE}/chat/stream`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: text, session_id: SESSION_ID }),
+                });
+
+                if (!response.ok) throw new Error(`Server error: ${response.status}`);
+
+                removeTyping(typingId);
+                const botDiv = appendMessage('', 'bot');
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let buffer = '';
+
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+
+                    buffer += decoder.decode(value, { stream: true });
+
+                    // SSE lines arrive as "data: <token>\n\n"
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop(); // keep any incomplete line for the next chunk
+
+                    for (const line of lines) {
+                        if (line.startsWith('data: ')) {
+                            botDiv.textContent += JSON.parse(line.slice(6));
+                            scrollToBottom();
+                        }
+                    }
+                }
+            } catch (err) {
+                removeTyping(typingId);
+                appendMessage('Sorry, I am not online. Please try again.', 'bot');
+                console.error(err);
+            } finally {
+                isGenerating = false;
+                btn.disabled = input.value.trim() === '';
+            }
+        }
+
+        function handleChip(btn) {
+            document.getElementById('chatInput').value = btn.textContent;
+            sendMessage();
+        }
+
+        // Returns the created div so the caller can stream text into it
+        function appendMessage(text, role) {
+            const messages = document.getElementById('chatMessages');
+            const div = document.createElement('div');
+            div.className = `message message-${role}`;
+            div.textContent = text;
+            messages.appendChild(div);
+            scrollToBottom();
+            return div;
+        }
+
+        function showTyping() {
+            const messages = document.getElementById('chatMessages');
+            const div = document.createElement('div');
+            const id = 'typing-' + Date.now();
+            div.id = id;
+            div.className = 'message message-typing';
+            div.innerHTML = `<svg class="scribble-svg" viewBox="0 0 80 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path class="scribble-path" d="M2,12 C5,4 9,18 13,11 C17,4 21,17 26,10 C31,3 35,18 40,10 C45,3 49,17 54,10 C59,3 63,18 68,11 C72,4 76,16 78,10" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>`;
+            messages.appendChild(div);
+            scrollToBottom();
+            return id;
+        }
+
+        function removeTyping(id) {
+            const el = document.getElementById(id);
+            if (el) el.remove();
+        }
+
+        function scrollToBottom() {
+            window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+        }
+
+        document.addEventListener('DOMContentLoaded', function () {
+            const input = document.getElementById('chatInput');
+            const btn = document.getElementById('sendBtn');
+
+            btn.disabled = true;
+
+            input.addEventListener('keydown', function (e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    if (!btn.disabled && !isGenerating) sendMessage();
+                }
+            });
+
+            input.addEventListener('input', function () {
+                this.style.height = 'auto';
+                this.style.height = Math.min(this.scrollHeight, 160) + 'px';
+                btn.disabled = this.value.trim() === '';
+            });
+        });
+    </script>
+
+</body>
+</html>

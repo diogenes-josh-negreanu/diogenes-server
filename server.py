@@ -8,8 +8,8 @@ import torch
 from tokenizers import Tokenizer
 
 from models.GPT import GPT
-model_checkpoint_path = '/Users/josh/Documents/GitHub/diogenes-server/checkpoints/diogenes-v1.pth'
-tokenizer_path = '/Users/josh/Documents/GitHub/diogenes-server/data/tokenizer.json'
+model_checkpoint_path = 'C:\\Users\\Joshua\\Documents\\Github\\diogenes-server\\checkpoints\\diogenes-1'
+tokenizer_path = 'C:\\Users\\Joshua\\Documents\\Github\\diogenes-server\\data\\tokenizer.json'
 
 # dynamically select device
 if torch.cuda.is_available():
@@ -25,7 +25,7 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "https://diogenes.joshnegreanu.com"],
     allow_methods=["GET", "POST", "DELETE"],
     allow_headers=["Content-Type"],
 )
@@ -132,28 +132,33 @@ def build_prompt(messages, system=None):
 
 class ChatRequest(BaseModel):
     message: str
+    mode: str
     session_id: str = "default"
-    max_context: int = 256
-    max_new_tokens: int = 256
-    temperature: float = 0.8
+    max_context: int = 1024
+    max_new_tokens: int = 512
+    temperature: float = 0.5
     top_k: int = 50
-    top_p: float = 0.9
+    top_p: float = 0.99
 
 class ChatResponse(BaseModel):
     reply: str
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest):
-    default_system = "You are a helpful and friendly AI assistant named Diogenes that is knowledgeable in every field. You are tasked with answering questions and requests from a user with very short, concise and informative answers."
-    
-    system_token_len = len(
-        tokenizer.encode(f"<|im_start|>system\n{default_system}<|im_end|>\n").ids
-    )
+
+    if req.mode == "conversational":
+        system = "You are a friendly and conversational AI assistant named Diogenes. You engage in natural and flowing dialogue with users, providing helpful and informative responses. You remember the context of the conversation and build on it to create a coherent and enjoyable chat experience."
+    elif req.mode == "scholar":
+        system = "You are a scholarly AI assistant named Diogenes. You have deep expertise in philosophy, history, science, and literature. You provide detailed and nuanced answers to complex questions, citing relevant sources and theories. You engage in thoughtful analysis and critical thinking to explore ideas in depth."
+    elif req.mode == "creative":
+        system = "You are a creative AI assistant named Diogenes. You excel at generating imaginative and original content, including stories, poems, and artistic ideas. You think outside the box and provide unique perspectives on prompts, inspiring creativity and innovation in your responses."
+
+    system_token_len = len(tokenizer.encode(f"<|im_start|>system\n{system}<|im_end|>\n").ids)
 
     messages = sessions.setdefault(req.session_id, [])
     messages.append({"role": "user", "content": req.message})
 
-    prompt = build_prompt(messages, system=default_system)
+    prompt = build_prompt(messages, system=system)
     reply = generate(
         model,
         tokenizer,
@@ -172,15 +177,20 @@ async def chat(req: ChatRequest):
 
 @app.post("/chat/stream")
 async def chat_stream(req: ChatRequest):
-    default_system = "You are a helpful and friendly AI assistant named Diogenes that is knowledgeable in every field. You are tasked with answering questions and requests from a user with concise and informative answers. Please think deeply about your answers."
+    if req.mode == "conversational":
+        system = "You are a friendly and conversational AI assistant named Diogenes. You engage in natural and flowing dialogue with users, providing helpful and informative responses. You remember the context of the conversation and build on it to create a coherent and enjoyable chat experience Please provide short answers."
+    elif req.mode == "scholar":
+        system = "You are a scholarly AI assistant named Diogenes. You have deep expertise in philosophy, history, science, and literature. You provide detailed and nuanced answers to complex questions, citing relevant sources and theories. You engage in thoughtful analysis and critical thinking to explore ideas in depth. Please provide short answers."
+    elif req.mode == "creative":
+        system = "You are a creative AI assistant named Diogenes. You excel at generating imaginative and original content, including stories, poems, and artistic ideas. You think outside the box and provide unique perspectives on prompts, inspiring creativity and innovation in your responses. Please provide short answers."
 
-    system_token_len = len(
-        tokenizer.encode(f"<|im_start|>system\n{default_system}<|im_end|>\n").ids
-    )
+    print(req.mode)
+
+    system_token_len = len(tokenizer.encode(f"<|im_start|>system\n{system}<|im_end|>\n").ids)
 
     messages = sessions.setdefault(req.session_id, [])
     messages.append({"role": "user", "content": req.message})
-    prompt = build_prompt(messages, system=default_system)
+    prompt = build_prompt(messages, system=system)
 
     reply_parts: list[str] = []
 
@@ -206,7 +216,7 @@ async def chat_stream(req: ChatRequest):
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",  # disables buffering in nginx / Cloudflare tunnels
+            "X-Accel-Buffering": "no",
         },
     )
 
